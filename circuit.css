@@ -1,0 +1,32 @@
+#gatesList {
+	float: left;
+}
+
+#workspace {
+	height: 98vh;
+	width: 1400px;
+	border: solid 1px;
+	margin-left: 160px;
+}
+
+#gatesList ul {
+	list-style-type: none;
+  	margin: 0;
+  	padding: 0;
+}
+
+#gatesList li {
+	margin: 20px 0;
+}
+
+#tooltip {
+	padding: 5px;
+	position: absolute;
+	border: 1px dashed green;
+	background: #ff6666;
+	height: 200px;
+	width: 200px;
+	right: 80px;
+	top: 20px;
+	opacity: 0.8;
+}

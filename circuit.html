@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" type="text/css" href="circuit.css" />
+<script src = "https://code.jquery.com/jquery-1.10.2.js"></script>
+<script src = "https://code.jquery.com/ui/1.10.4/jquery-ui.js"></script>
+<script>
+	var allLines = {};
+	var gateCounter = 0;
+	var gatesPlaced = {};
+	var lineCounter = 0;
+	var outputCounter = 0;
+	$(function(){
+
+		// Creates a clone of the gate being dragged for users to visualise, also allows gates in list to be draggable
+		$('#andDrag, #orDrag, #xorDrag, #notDrag, #nandDrag, #norDrag').draggable({
+			containment:'#workspace', 
+			helper:"clone"
+		});
+
+		// Allows clone to be dropped and given a unique id for use when circuit is saved and processed for truth table. Also adds gate to dictionary.
+		$('#workspace').droppable({
+			drop: function (e, ui) {
+				var dragged = ui.draggable.attr("id");
+				$(ui.helper).clone().appendTo($(this)).attr("id", dragged+gateCounter);
+				var offset = $(this).offset();
+				var image = document.getElementById(dragged+gateCounter);
+				var imageBound = image.getBoundingClientRect();
+				gatesPlaced[dragged+gateCounter] = [(imageBound.left+75)-offset.left, (imageBound.top+35)-offset.top]; // 75 and 35 is half the width and height so takes centre of image not top left 
+				gateCounter += 1;
+		}})
+
+		// Allows line to be drawn to connect gates in workspace. Only allows line to be drawn between gates and not anywhere in the workspace.
+		var areaClicked = [];
+		$('#workspace').click(function(e){
+			var offset = $(this).offset();
+			var mouseX = (e.pageX - offset.left);
+			var mouseY = (e.pageY - offset.top);
+			var c = document.getElementById("lineCanvas");
+			var draw = c.getContext("2d");
+			for(key in gatesPlaced){
+				var image = document.getElementById(key);
+				var imageBound = image.getBoundingClientRect();
+				const rect = new Path2D();
+				rect.rect(imageBound.left-170, imageBound.top-9, imageBound.width, imageBound.height);
+				if(draw.isPointInPath(rect, mouseX, mouseY)){
+					if (areaClicked.length == 0) {
+						areaClicked.push(mouseX, mouseY);
+					} else if (areaClicked.length == 2) {
+						areaClicked.push(mouseX, mouseY);
+						var c = document.getElementById("lineCanvas");
+						var drawLine = c.getContext("2d");
+						drawLine.beginPath();
+						drawLine.moveTo(areaClicked[0], areaClicked[1]);
+						drawLine.lineTo(areaClicked[2], areaClicked[3]);
+						drawLine.lineWidth = 3;
+						drawLine.stroke();
+						allLines["line"+lineCounter] = [areaClicked[0],areaClicked[1],areaClicked[2],areaClicked[3]];
+						lineCounter += 1;
+						areaClicked = [];
+					}
+				}
+			}
+		})
+
+		// Allows gates to be deleted with double click of mouse button. Gate is also removed from the dictionary
+		$('#workspace').dblclick(function (e){
+			if (e.target.id == 'lineCanvas') {
+				null;
+			} else {
+				$(e.target).remove();
+				delete gatesPlaced[$(e.target).attr("id")];
+			}
+		})
+	});
+
+	// Hides tooltip in top right corner on hover
+	function hideTooltip() {
+		document.getElementById("tooltip").style.visibility = "hidden";
+	}
+
+	// Clears workspace when button is clicked
+	function clearWorkspace() {
+		if (confirm("Are you sure you wish to clear everything in the workspace? All unsaved changes will be lost.")){
+			location.reload();
+		}
+	}
+
+	// Creates an input and output box around the gates then checks what gates receive input or output, or both.
+	function generateTable() {
+		// Create dictionary with all gateKey and "[lineIn, lineIn, lineOut]" values ready to be populated. two line in since gates can have 2 entries
+		var layout = {};
+		var labelCount = 0;
+		for(var gateKey in gatesPlaced){
+			layout[gateKey] = [null,null,null];
+		}	
+		var c = document.getElementById("lineCanvas");
+		var draw = c.getContext("2d");
+		draw.font = "20px Arial";
+		for(var gateKey in gatesPlaced){
+			var image = document.getElementById(gateKey);
+			var imageBound = image.getBoundingClientRect();
+			const input = new Path2D();
+			const output = new Path2D();
+			input.rect(imageBound.left-170, imageBound.top-9, imageBound.width/2, imageBound.height);
+			output.rect(imageBound.left-90, imageBound.top-9, imageBound.width/2, imageBound.height);
+			for(var lineKey in allLines){
+				if(draw.isPointInPath(input, allLines[lineKey][0], allLines[lineKey][1]) || draw.isPointInPath(input, allLines[lineKey][2], allLines[lineKey][3])){
+					if(layout[gateKey][0] !== null){
+						layout[gateKey] = [layout[gateKey][0], lineKey, layout[gateKey][2]];
+					} else{
+						layout[gateKey] = [lineKey, layout[gateKey][1], layout[gateKey][0]];
+					}
+				} else if(draw.isPointInPath(output, allLines[lineKey][0], allLines[lineKey][1]) || draw.isPointInPath(output, allLines[lineKey][2], allLines[lineKey][3])){
+					layout[gateKey] = [layout[gateKey][0], layout[gateKey][1], lineKey];
+				} 
+			}
+		}
+		// Creates the truth table window
+		var tableWindow = window.open("about:blank", "", "width=750,height=500");
+		tableWindow.moveTo(0,0);
+		tableWindow.document.write('<html><head><style>table{border-collapse:collapse;width:100%;}td,th{border:1px solid #dddddd;text-align:left;padding:8px;}tr:nth-child(even){background-color:#dddddd;}</style></head><body><h1>Truth Table</h1><h5>T = True, F = False</h5><table><tr>');
+
+		// Now we order the layout and output the truth table of it.
+
+		// Calculate output for all starting gates, then go as deep as possible on one until it needs the next gates to calculate?
+		// Display a diagram of the created circuit with the inputs labelled A,B etc then the outputs labelled X,Y etc and a truth table below
+		var finalLayout = [];
+		for(var gateKey in layout){
+			var image = document.getElementById(gateKey);
+			var imageBound = image.getBoundingClientRect();
+			// All the gates without input, thus start the logic circuit. First If catches the not gate since only one input and would make rest of code hard to include this gate.
+			if(gateKey.includes("notDrag") === true){
+				if(layout[gateKey][0] === null){
+					var inputLabel = String.fromCharCode(97 + labelCount);
+					draw.fillText(inputLabel, imageBound.left-175, imageBound.top+30);
+					tableWindow.document.write('<th>'+inputLabel+'</th>');
+				} else if((layout[gateKey][0] !== null)||(layout[gateKey][1] !== null)){
+					for(var gateKey2 in layout){
+						if((layout[gateKey][0]||layout[gateKey][1]) === layout[gateKey2][2]){
+							inputLabel = gateKey2;
+						}
+					}
+				}
+				if(layout[gateKey][2] === null){
+					draw.fillText("X"+outputCounter, imageBound.left-25, imageBound.top+35);
+					tableWindow.document.write('<th>X'+outputCounter+'</th>');
+					var outputTo = "X"+outputCounter;
+					outputCounter += 1;
+				}
+				finalLayout.push(inputLabel,null,gateKey,outputTo);
+				labelCount += 1;
+			} else if(layout[gateKey][0] === null && layout[gateKey][1] === null){
+				var inputLabel1 = String.fromCharCode(97 + labelCount);
+				draw.fillText(inputLabel1, imageBound.left-170, imageBound.top);
+				tableWindow.document.write('<th>'+inputLabel1+'</th>');
+				labelCount += 1;
+				var inputLabel2 = String.fromCharCode(97 + labelCount);
+				draw.fillText(inputLabel2, imageBound.left-170, imageBound.top+60);
+				tableWindow.document.write('<th>'+inputLabel2+'</th>');
+				labelCount += 1;
+				for(var gateKey2 in layout){
+					if(layout[gateKey][2] === (layout[gateKey2][0] || layout[gateKey2][1])){
+						var outputTo = gateKey2;
+					}
+				} 
+				if(layout[gateKey][2] === null){
+					draw.fillText("X"+outputCounter, imageBound.left-25, imageBound.top+35);
+					tableWindow.document.write('<th>X'+outputCounter+'</th>');
+					var outputTo = "X"+outputCounter;
+					outputCounter += 1;
+				}
+				finalLayout.push(inputLabel1, inputLabel2, gateKey, outputTo);
+			}
+			// Gates that only have 1 input but space for two
+			else if((layout[gateKey][0] === null && layout[gateKey][1] !== null)||(layout[gateKey][0] !== null && layout[gateKey][1] === null)){
+				var inputLabel1 = String.fromCharCode(97 + labelCount);
+				draw.fillText(inputLabel1, imageBound.left-175, imageBound.top+30);
+				tableWindow.document.write('<th>'+inputLabel1+'</th>');
+				labelCount += 1;
+				for(var gateKey2 in layout){
+					if(layout[gateKey][2] === (layout[gateKey2][0] || layout[gateKey2][1])){
+						var outputTo = gateKey2;
+					}
+					if((layout[gateKey][0]||layout[gateKey][1]) === layout[gateKey2][2]){
+						var inputLabel2 = gateKey2;
+					}
+				}
+				if(layout[gateKey][2] === null){
+					draw.fillText("X"+outputCounter, imageBound.left-25, imageBound.top+35);
+					tableWindow.document.write('<th>X'+outputCounter+'</th>');
+					var outputTo = "X"+outputCounter;
+					outputCounter += 1;
+				}
+				finalLayout.push(inputLabel1,inputLabel2,gateKey,outputTo);
+			}
+			// Gates that have no connected output so end the circuit
+			else if(layout[gateKey][2] === null){
+				draw.fillText("X"+outputCounter, imageBound.left-25, imageBound.top+35);
+				tableWindow.document.write('<th>X'+outputCounter+'</th>');
+				var outputLabel = "X"+outputCounter;
+				outputCounter += 1;
+				for(var gateKey2 in layout){
+					if(layout[gateKey][0] === layout[gateKey2][2]){
+						var input1 = gateKey2; 
+					}
+					if(layout[gateKey][1] === layout[gateKey2][2]){
+						var input2 = gateKey2;
+					}
+				}
+				finalLayout.push(input1, input2, gateKey, outputLabel);
+			// All remaining middle gates that have all inputs and an output. (Not including Not Gate)
+			} else if(layout[gateKey][0] !== null && layout[gateKey][1] !== null && layout[gateKey][2] !== null){
+				for(var gateKey2 in layout){
+					if(layout[gateKey][0] === layout[gateKey2][2]){
+						var input1 = gateKey2;
+					}
+					if(layout[gateKey][1] === layout[gateKey2][2]){
+						var input2 = gateKey2;
+					}
+					if(layout[gateKey][2] === (layout[gateKey2][0]||layout[gateKey2][1])){
+						var output = gateKey2;
+					}
+				}
+				finalLayout.push(input1, input2, gateKey, output);
+			}
+		}
+		tableWindow.document.write('</tr>');
+		// Get all elements in array with 1 letter since only the labels that start the circuit can have 1 length size
+		startValues = [];
+		for(var i = 0; i<finalLayout.length; i++){
+			if(finalLayout[i] !== null && finalLayout[i].length === 1){
+				startValues.push(finalLayout[i]);
+			}
+		}
+		row = [];
+		for (var i = (Math.pow(2, startValues.length)-1); i >= 0; i--) {
+			var copyFinalLayout = finalLayout.slice();
+			for (var j = (startValues.length - 1) ; j >= 0 ; j--) {
+				row[j] = (i & Math.pow(2,j)) ? true : false
+			}
+			tableWindow.document.write('<tr>')
+			for(var k = 0; k<row.length; k++){
+				tableWindow.document.write('<td>'+row[k]+'</td>');
+			}
+			// before adding tr we want to calculate output and add that
+			var y = 0;
+			for(var x=0;x<copyFinalLayout.length; x++){
+				if(copyFinalLayout[x].length === 1){
+					copyFinalLayout[x] = row[y];
+					y += 1;
+				}
+			}
+			for(var key=0;key<copyFinalLayout.length; key+=4){
+				// Takes id of gate we are on and sets it to its native operator, i.e and, or, xor etc
+				var id = copyFinalLayout[key+2].replace("Drag",'');
+				id = id.replace(/[0-9]/g,'');
+				var gateOutput = true;
+				// all used gates have been removed and only one remains, giving the end output
+				if((key+4 === copyFinalLayout.length) && (copyFinalLayout.length === 4)) {
+					console.log("1");
+					if(id === "and"){
+						gateOutput = copyFinalLayout[key] && copyFinalLayout[key+1];
+					} else if(id === "or"){
+						gateOutput = copyFinalLayout[key] || copyFinalLayout[key+1];
+					} else if(id === "xor"){
+						gateOutput = (copyFinalLayout[key] && !copyFinalLayout[key+1]) || (!copyFinalLayout[key] && copyFinalLayout[key+1]);
+					} else if(id === "nand"){
+						gateOutput = !(copyFinalLayout[key] && copyFinalLayout[key+1]);
+					} else if(id == "nor"){
+						gateOutput = !(copyFinalLayout[key] || copyFinalLayout[key+1]);
+					}
+					tableWindow.document.write('<td>'+gateOutput+'</td>');
+					/*
+				// if the key is the same as the length of the array and there is more than one gate in the array, we return to start
+				} else if((key+4 === copyFinalLayout.length) && (copyFinalLayout.length !== 4)){
+					console.log("2");
+					key = 0;
+				// if the gate is not caught before this we can assume it is a gate with a connected output
+				} else {
+					if(id === "and"){
+						gateOutput = copyFinalLayout[key] && copyFinalLayout[key+1];
+						for(var s=0;s<copyFinalLayout.length; s+=4){
+							if(copyFinalLayout[key+2] === copyFinalLayout[s]){
+								copyFinalLayout[s] = gateOutput;
+								copyFinalLayout.splice(key, 4);
+							} else if(copyFinalLayout[key+2] === copyFinalLayout[s+1]){
+								copyFinalLayout[s+1] = gateOutput;
+								copyFinalLayout.splice(key, 4);
+							}
+						}
+					}
+					*/
+				}
+			}
+			tableWindow.document.write('</tr>');
+		}
+		tableWindow.document.write('</table></body></html>');
+	}
+
+	// Function to save circuit 
+	function saveCircuit() {
+		gatePositions = [];
+		linePositions = [];
+		for(var key in gatesPlaced){
+			gatePositions.push(key,gatesPlaced[key][0],gatesPlaced[key][1]);
+		}
+		for(var key in allLines){
+			linePositions.push(key, allLines[key][0], allLines[key][1], allLines[key][2], allLines[key][3]);
+		}
+		var pom = document.createElement('a');
+    	pom.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(gatePositions+","+linePositions));
+    	pom.setAttribute('download', "circuit.txt");
+
+    	if (document.createEvent) {
+        	var event = document.createEvent('MouseEvents');
+        	event.initEvent('click', true, true);
+        	pom.dispatchEvent(event);
+    	} else {
+    		pom.click();
+    	}
+	}
+
+	// Loads in gates for selected file
+	function loadCircuit() {
+		if(confirm("Loading a saved circuit will overwrite anything currently placed in the workspace. Do you wish to continue?")){
+			$("#workspace img").remove();
+			gatesPlaced = {};
+			gatePositions = [];
+			var input = document.createElement('input');
+			input.type = 'file';
+			input.onchange = e => {
+				var file = e.target.files[0];
+				var reader = new FileReader();
+				reader.readAsText(file,'UTF-8');
+				reader.onload = readerEvent => {
+					var content = readerEvent.target.result;
+					gatePositions = content.split(",");
+					var highestCount = parseInt(gatePositions[0].replace(/\D/g, ''));
+					for(var i=0; i<gatePositions.length;){
+						if(gatePositions[i].includes("Drag") === true){
+							if (parseInt(gatePositions[i].replace(/\D/g, '')) > highestCount){
+								highestCount = parseInt(gatePositions[i].replace(/\D/g, ''));
+							}
+							var imgSRC = gatePositions[i].replace(/[0-9]/g, '').replace("Drag", "Gate.png");
+							$('#workspace').prepend('<img src='+imgSRC+' style="height:70px;width:150px;position:absolute" id="'+gatePositions[i]+'">');
+							var img = document.getElementById(gatePositions[i]);
+							img.style.left = (parseInt(gatePositions[i+1])+93)+"px";
+							img.style.top = (parseInt(gatePositions[i+2])-29)+"px";
+							gatesPlaced[gatePositions[i]] = [gatePositions[i+1], gatePositions[i+2]];
+							i += 3;
+						} else {
+							var highestCount2 = 0;
+							if (parseInt(gatePositions[i].replace(/\D/g, '')) > highestCount2){
+								highestCount2 = parseInt(gatePositions[i].replace(/\D/g, ''));
+							}
+							var c = document.getElementById("lineCanvas");
+							var drawLine = c.getContext("2d");
+							drawLine.beginPath();
+							drawLine.moveTo(gatePositions[i+1], gatePositions[i+2]);
+							drawLine.lineTo(gatePositions[i+3], gatePositions[i+4]);
+							drawLine.lineWidth = 3;
+							drawLine.stroke();
+							allLines[gatePositions[i]] = [gatePositions[i+1], gatePositions[i+2], gatePositions[i+3], gatePositions[i+4]];
+							console.log(gatePositions[i]);
+							i += 5;
+						}
+					}
+					gateCounter = highestCount+1;
+					lineCounter = highestCount2+1;
+				}
+			}
+			input.click();
+		}	
+	}
+</script>
+<title>Logic Circuit Board</title>
+</head>
+<body>
+	<div id="gatesList">
+	<button onClick="clearWorkspace()">CLEAR WORKSPACE</button><br />
+	<button onClick="saveCircuit()">SAVE WORKSPACE</button><br />
+	<button onClick="loadCircuit()">LOAD CIRCUIT</button><br />
+	<button onClick="generateTable()">GENERATE TABLE</button><br />
+	<ul>
+		<li><img src="andGate.png" height="70" width="150" id="andDrag"><br /><center>AND</center></li>
+		<li><img src="orGate.png" height="70" width="150" id="orDrag"><br /><center>OR</center></li>
+		<li><img src="xorGate.png" height="70" width="150" id="xorDrag"><br /><center>XOR</center></li>
+		<li><img src="notGate.png" height="70" width="150" id="notDrag"><br /><center>NOT</center></li>
+		<li><img src="nandGate.png" height="70" width="150" id="nandDrag"><br /><center>NAND</center></li>
+		<li><img src="norGate.png" height="70" width="150" id="norDrag"><br /><center>NOR</center></li>
+	</ul>
+	</div>
+	
+	<div id="workspace">
+		<div id="tooltip" onmouseout="hideTooltip()">
+		Drag and drop gates from the list on the left side onto the workspace. <br /><br />
+		Click two gates already placed in workspace to connect. <br /><br />
+		Double click gates in workspace to delete. <br /><br />
+		<center>Hover to Dismiss.</center>
+		</div>
+		<canvas id="lineCanvas" height="750px" width="1400px"></canvas>
+	</div>
+</body>
+</html>
+
+<!-- save circuit and load etc -->
+<!-- jquery scripts exist to draw lines between objects, i.e https://www.jqueryscript.net/other/animated-lines-elements-bezier.html -->
+<!-- need to change div and canvas size to be responsive without messing up the drawLine -->
+<!-- only gates are deletable -->
+<!-- https://gist.github.com/yarwelp/1403833/ac701c80a117225b13827fabe2f790c16791b57b -->
+<!--BUGS: Creating line backwards from NOT gate produces output on gate behind it (cant seem to recreate anymore?) -->
